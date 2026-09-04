@@ -84,7 +84,7 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
             # 2. Check for saved authentication session
             if not STORAGE_STATE_FILE.exists():
                 raise FileNotFoundError(
-                    "Moodle session not found. Please log in first via Settings -> Connect Moodle."
+                    "Moodle session not found. Please click 'Sign in with Microsoft' in Settings."
                 )
 
             _current_sync_status["current_stage"] = "authenticating"
@@ -106,11 +106,13 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
                     _current_sync_status["progress_message"] = f"Loading dashboard: {target_url}..."
                     response = page.goto(target_url, timeout=45000, wait_until="domcontentloaded")
 
-                    # Check if redirected to login page (session expired)
-                    if "login" in page.url.lower():
-                        raise PermissionError(
-                            "Moodle session has expired. Please re-authenticate via Settings."
-                        )
+                    # Check if redirected to Microsoft SSO login or Moodle login page (session expired)
+                    current_url = page.url.lower()
+                    is_ms_login = any(ms in current_url for ms in ["microsoft", "live.com", "msft"])
+                    is_moodle_login = "/login/" in current_url and "/my" not in current_url
+
+                    if is_ms_login or is_moodle_login:
+                        raise PermissionError("Moodle session expired — Sign in again")
 
                     # Save diagnostic DOM snapshot to logs for inspection of real university markup
                     snapshot_file = LOGS_DIR / "moodle_dashboard_snapshot.html"

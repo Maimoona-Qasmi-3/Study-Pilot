@@ -68,24 +68,40 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Auth warning banner if not connected */}
-      {stats && !stats.is_authenticated && (
+      {/* Auth warning / expired banner */}
+      {stats && stats.is_expired ? (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start space-x-3 text-rose-300">
+          <ShieldAlert className="w-5 h-5 shrink-0 text-rose-400 mt-0.5" />
+          <div className="text-sm flex-1">
+            <p className="font-semibold text-rose-200">Moodle session expired — Sign in again</p>
+            <p className="text-rose-300/80 mt-0.5">
+              Your Microsoft SSO authentication has expired. Click the button to open the browser window and renew your university session.
+            </p>
+          </div>
+          <Link
+            href="/settings"
+            className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shrink-0 transition shadow-sm"
+          >
+            Sign in with Microsoft
+          </Link>
+        </div>
+      ) : stats && !stats.is_authenticated ? (
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start space-x-3 text-amber-300">
           <ShieldAlert className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
           <div className="text-sm flex-1">
             <p className="font-semibold text-amber-200">Moodle Account Not Connected</p>
             <p className="text-amber-300/80 mt-0.5">
-              Study Pilot needs an authenticated Moodle session to discover your active courses and assignments.
+              Study Pilot needs an authenticated Microsoft SSO session to discover your active courses and assignments.
             </p>
           </div>
           <Link
             href="/settings"
             className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold shrink-0 transition"
           >
-            Connect Now
+            Connect with Microsoft SSO
           </Link>
         </div>
-      )}
+      ) : null}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

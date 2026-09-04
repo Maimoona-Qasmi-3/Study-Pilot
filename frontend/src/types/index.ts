@@ -76,7 +76,16 @@ export interface DashboardStats {
   upcoming_deadlines_count: number;
   ready_for_review_count: number;
   is_authenticated: boolean;
+  is_expired?: boolean;
+  session_message?: string;
   latest_sync: SyncRun | null;
+}
+
+export interface LoginProgress {
+  is_logging_in: boolean;
+  status: "idle" | "in_progress" | "success" | "failed";
+  message: string;
+  last_updated: number;
 }
 
 export interface SyncStatus {

@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from ..database import get_session
 from ..models import SyncRun, SystemSetting
 from ..moodle.sync_service import run_moodle_sync, get_sync_status
-from ..moodle.auth import launch_interactive_login, verify_session, is_session_saved
+from ..moodle.auth import launch_interactive_login, verify_session, is_session_saved, get_login_progress
 
 router = APIRouter(prefix="/moodle", tags=["moodle"])
 
@@ -65,5 +65,10 @@ def verify_moodle_session(session: Session = Depends(get_session)):
     setting = session.get(SystemSetting, "moodle_url")
     moodle_url = setting.value.strip() if setting and setting.value else None
     if not moodle_url:
-        return {"valid": False, "message": "Moodle URL not configured."}
+        return {"valid": False, "expired": False, "message": "Moodle URL not configured."}
     return verify_session(moodle_url)
+
+@router.get("/auth/progress")
+def get_auth_progress():
+    """Returns real-time Microsoft SSO interactive login progress."""
+    return get_login_progress()

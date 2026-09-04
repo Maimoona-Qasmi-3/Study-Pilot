@@ -39,11 +39,26 @@ def get_dashboard_stats(session: Session = Depends(get_session)):
         select(SyncRun).order_by(SyncRun.started_at.desc())
     ).first()
 
+    has_saved_session = STORAGE_STATE_FILE.exists()
+    is_expired = False
+    if latest_sync and latest_sync.status == "failed" and latest_sync.error_message:
+        if "expired" in latest_sync.error_message.lower():
+            is_expired = True
+
+    if is_expired:
+        session_message = "Moodle session expired — Sign in again"
+    elif not has_saved_session:
+        session_message = "Moodle session not connected"
+    else:
+        session_message = "Moodle session connected"
+
     return {
         "active_courses_count": active_courses_count,
         "new_activities_count": new_activities_count,
         "upcoming_deadlines_count": upcoming_deadlines_count,
         "ready_for_review_count": ready_for_review_count,
-        "is_authenticated": STORAGE_STATE_FILE.exists(),
+        "is_authenticated": has_saved_session and not is_expired,
+        "is_expired": is_expired,
+        "session_message": session_message,
         "latest_sync": latest_sync,
     }

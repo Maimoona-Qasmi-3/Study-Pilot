@@ -6,7 +6,7 @@ from app.api.dashboard import get_dashboard_stats
 from app.api.courses import list_courses, get_course, update_course, CourseUpdate
 from app.api.activities import list_activities, get_calendar_events, update_activity, ActivityUpdate
 from app.api.settings import get_settings, update_settings
-from app.api.moodle import sync_status
+from app.api.moodle import sync_status, get_auth_progress
 
 @pytest.fixture(name="session")
 def session_fixture():
@@ -20,6 +20,22 @@ def test_dashboard_stats_empty(session: Session):
     assert stats["active_courses_count"] == 0
     assert stats["new_activities_count"] == 0
     assert stats["upcoming_deadlines_count"] == 0
+    assert "is_expired" in stats
+    assert "session_message" in stats
+
+def test_dashboard_stats_detects_expired_session(session: Session):
+    # Add a failed sync run with expired message
+    failed_sync = SyncRun(
+        status="failed",
+        trigger="manual",
+        error_message="Moodle session expired — Sign in again"
+    )
+    session.add(failed_sync)
+    session.commit()
+
+    stats = get_dashboard_stats(session=session)
+    assert stats["is_expired"] is True
+    assert stats["session_message"] == "Moodle session expired — Sign in again"
 
 def test_courses_and_activities_endpoints(session: Session):
     # Create test course
@@ -94,3 +110,9 @@ def test_moodle_sync_status_endpoint():
     status = sync_status()
     assert "is_syncing" in status
     assert "progress_message" in status
+
+def test_auth_progress_endpoint():
+    prog = get_auth_progress()
+    assert "is_logging_in" in prog
+    assert "status" in prog
+    assert "message" in prog
