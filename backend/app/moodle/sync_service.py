@@ -1,3 +1,4 @@
+import re
 import json
 import logging
 import threading
@@ -37,6 +38,47 @@ def _log_activity(session: Session, event_type: str, message: str, severity: str
     session.add(log_entry)
     session.commit()
 
+def parse_moodle_datetime(raw: str) -> Optional[datetime]:
+    """Parses various Moodle date formats into a timezone-aware UTC datetime."""
+    if not raw:
+        return None
+    raw = raw.strip()
+    formats = [
+        "%A, %d %B %Y, %I:%M %p",
+        "%d %B %Y, %I:%M %p",
+        "%A, %d %b %Y, %I:%M %p",
+        "%d %b %Y, %I:%M %p",
+        "%Y-%m-%d %H:%M:%S",
+    ]
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+    # Regex fallback if date is embedded in longer string (e.g. "Due: Sunday, 31 May 2026, 11:59 PM")
+    match = re.search(r'([A-Za-z]+,\s+\d{1,2}\s+[A-Za-z]+\s+\d{4},\s+\d{1,2}:\d{2}\s+[AP]M)', raw)
+    if match:
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(match.group(1), fmt)
+                return dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+    return None
+
+def clean_course_title(raw_text: str) -> str:
+    """Removes redundant UI label prefixes from course titles."""
+    text = raw_text.strip()
+    # Remove leading 'Course name\n' if present
+    text = re.sub(r'^Course name\s+', '', text, flags=re.IGNORECASE)
+    # Take first clean line
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines:
+        text = lines[0]
+    return text
+
 def run_moodle_sync(trigger: str = "manual") -> SyncRun:
     """
     Unified Moodle synchronization service.
@@ -54,7 +96,6 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
     _current_sync_status["progress_message"] = f"Starting {trigger} sync..."
 
     with Session(engine, expire_on_commit=False) as session:
-        # Create SyncRun record
         sync_run = SyncRun(
             started_at=datetime.now(timezone.utc),
             status="running",
@@ -84,11 +125,11 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
             # 2. Check for saved authentication session
             if not STORAGE_STATE_FILE.exists():
                 raise FileNotFoundError(
-                    "Moodle session not found. Please click 'Sign in with Microsoft' in Settings."
+                    "Moodle session not found. Please click 'Sign in with Microsoft Edge' in Settings."
                 )
 
             _current_sync_status["current_stage"] = "authenticating"
-            _current_sync_status["progress_message"] = "Connecting to Moodle with saved session..."
+            _current_sync_status["progress_message"] = "Connecting to Moodle via Microsoft Edge..."
 
             courses_found_count = 0
             activities_found_count = 0
@@ -99,68 +140,98 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
                     browser = p.chromium.launch(channel="msedge", headless=True)
                 except Exception:
                     browser = p.chromium.launch(headless=True)
+
                 try:
                     context = browser.new_context(storage_state=str(STORAGE_STATE_FILE))
                     page = context.new_page()
 
-                    # Navigate to Moodle home / dashboard
-                    target_url = moodle_url.rstrip("/") + "/my/"
-                    _current_sync_status["current_stage"] = "fetching_dashboard"
-                    _current_sync_status["progress_message"] = f"Loading dashboard: {target_url}..."
-                    response = page.goto(target_url, timeout=45000, wait_until="domcontentloaded")
+                    # 3. Discover courses from /my/courses.php (Moodle 4 primary courses directory)
+                    my_courses_url = moodle_url.rstrip("/") + "/my/courses.php"
+                    _current_sync_status["current_stage"] = "discovering_courses"
+                    _current_sync_status["progress_message"] = f"Loading course catalog: {my_courses_url}..."
+                    logger.info(f"Navigating to courses page: {my_courses_url}")
+                    
+                    try:
+                        page.goto(my_courses_url, timeout=45000, wait_until="domcontentloaded")
+                        page.wait_for_timeout(2000)
+                    except Exception as nav_err:
+                        logger.warning(f"Failed to load /my/courses.php ({nav_err}), trying /my/...")
+                        page.goto(moodle_url.rstrip("/") + "/my/", timeout=45000, wait_until="domcontentloaded")
+                        page.wait_for_timeout(2000)
 
-                    # Check if redirected to Microsoft SSO login or Moodle login page (session expired)
+                    # Check if session has expired (redirected to Microsoft or login page)
                     current_url = page.url.lower()
-                    is_ms_login = any(ms in current_url for ms in ["microsoft", "live.com", "msft"])
-                    is_moodle_login = "/login/" in current_url and "/my" not in current_url
-
-                    if is_ms_login or is_moodle_login:
+                    if any(ms in current_url for ms in ["microsoft", "live.com", "msft"]) or ("/login/" in current_url and "/my" not in current_url):
                         raise PermissionError("Moodle session expired — Sign in again")
 
-                    # Save diagnostic DOM snapshot to logs for inspection of real university markup
+                    # Save diagnostic snapshot
                     snapshot_file = LOGS_DIR / "moodle_dashboard_snapshot.html"
                     snapshot_file.write_text(page.content(), encoding="utf-8", errors="replace")
-                    logger.info(f"Saved diagnostic snapshot to {snapshot_file}")
 
-                    _current_sync_status["current_stage"] = "discovering_courses"
-                    _current_sync_status["progress_message"] = "Discovering courses..."
+                    # Extract all course cards from Moodle DOM
+                    course_cards = page.query_selector_all('.dashboard-card, [data-region="course-content"], .course-info-container')
+                    raw_courses: Dict[str, Dict[str, Any]] = {}
 
-                    # Extract all course links on dashboard
-                    course_elements = page.query_selector_all('a[href*="/course/view.php?id="]')
-                    discovered_courses: Dict[str, Dict[str, str]] = {}
+                    for card in course_cards:
+                        link = card.query_selector('a[href*="/course/view.php?id="]')
+                        if not link:
+                            continue
+                        href = link.get_attribute("href") or ""
+                        if "id=" not in href:
+                            continue
+                        cid = href.split("id=")[1].split("&")[0]
+                        if not cid or not cid.isdigit():
+                            continue
 
-                    for elem in course_elements:
-                        href = elem.get_attribute("href") or ""
-                        text = (elem.inner_text() or "").strip()
-                        if "/course/view.php?id=" in href:
-                            # Extract course ID from query param
-                            try:
-                                cid = href.split("id=")[1].split("&")[0]
-                                if cid and cid.isdigit() and text and len(text) > 2:
-                                    if cid not in discovered_courses:
-                                        discovered_courses[cid] = {
-                                            "id": cid,
-                                            "name": text,
-                                            "url": href
-                                        }
-                            except Exception:
-                                continue
+                        # Extract title
+                        title_elem = card.query_selector('.coursename, .course-name, h5, .multiline')
+                        title_text = title_elem.inner_text().strip() if title_elem else link.inner_text().strip()
+                        cleaned_title = clean_course_title(title_text)
 
-                    courses_found_count = len(discovered_courses)
-                    logger.info(f"Discovered {courses_found_count} candidate courses on dashboard")
+                        # Extract course short name / category / semester code
+                        cat_elem = card.query_selector('.categoryname, .text-muted, .course-category')
+                        short_name_text = cat_elem.inner_text().strip() if cat_elem else ""
+                        short_name_clean = re.sub(r'^Course short name\s*', '', short_name_text, flags=re.IGNORECASE).strip()
 
-                    # Upsert discovered courses into database
-                    for cid, cinfo in discovered_courses.items():
+                        # Extract 4-digit semester code (e.g. 2601, 2503)
+                        sem_match = re.search(r'\((\d{4})-\d+\)', short_name_clean) or re.search(r'\((\d{4})\)', short_name_clean)
+                        semester_code = int(sem_match.group(1)) if sem_match else None
+
+                        raw_courses[cid] = {
+                            "id": cid,
+                            "title": cleaned_title,
+                            "short_name": short_name_clean,
+                            "semester_code": semester_code,
+                            "url": href,
+                        }
+
+                    courses_found_count = len(raw_courses)
+                    logger.info(f"Discovered {courses_found_count} courses on Moodle")
+
+                    # Determine the active semester (highest semester code, e.g. 2601)
+                    max_semester = None
+                    semester_codes = [c["semester_code"] for c in raw_courses.values() if c["semester_code"]]
+                    if semester_codes:
+                        max_semester = max(semester_codes)
+                        logger.info(f"Detected latest/current semester code: {max_semester}")
+
+                    # Upsert discovered courses
+                    for cid, cinfo in raw_courses.items():
+                        is_active = (cinfo["semester_code"] == max_semester) if max_semester else True
                         existing_course = session.exec(
                             select(Course).where(Course.moodle_course_id == cid)
                         ).first()
 
+                        term_tag = f"Semester {cinfo['semester_code']}" if cinfo["semester_code"] else None
+
                         if not existing_course:
                             new_course = Course(
                                 moodle_course_id=cid,
-                                full_name=cinfo["name"],
+                                full_name=cinfo["title"],
+                                short_name=cinfo["short_name"],
+                                term_or_category=term_tag,
                                 moodle_url=cinfo["url"],
-                                is_active=True,
+                                is_active=is_active,
                                 last_synced_at=datetime.now(timezone.utc)
                             )
                             session.add(new_course)
@@ -170,38 +241,45 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
                             _log_activity(
                                 session,
                                 event_type="course_discovered",
-                                message=f"Discovered new course: {cinfo['name']}",
+                                message=f"Discovered course: {cinfo['title']} ({'Active' if is_active else 'Archived'})",
                                 severity="info",
-                                details={"course_id": new_course.id, "moodle_course_id": cid}
+                                details={"course_id": new_course.id, "moodle_course_id": cid, "active": is_active}
                             )
                         else:
+                            existing_course.full_name = cinfo["title"]
+                            existing_course.short_name = cinfo["short_name"]
+                            existing_course.term_or_category = term_tag
+                            existing_course.is_active = is_active
                             existing_course.last_synced_at = datetime.now(timezone.utc)
                             session.add(existing_course)
                             session.commit()
 
-                    # Scan each active course for activities
+                    # 4. Scan active courses for activities & deadlines
                     active_courses = session.exec(select(Course).where(Course.is_active == True)).all()
                     for idx, c in enumerate(active_courses):
                         _current_sync_status["current_stage"] = "scanning_activities"
-                        _current_sync_status["progress_message"] = f"Scanning activities for {c.full_name} ({idx+1}/{len(active_courses)})..."
+                        _current_sync_status["progress_message"] = f"Scanning {c.full_name} ({idx+1}/{len(active_courses)})..."
+                        logger.info(f"Scanning course: {c.full_name} (ID {c.moodle_course_id})")
 
                         try:
-                            page.goto(c.moodle_url, timeout=30000, wait_until="domcontentloaded")
-                            page.wait_for_timeout(1000)
+                            page.goto(c.moodle_url, timeout=35000, wait_until="domcontentloaded")
+                            page.wait_for_timeout(1500)
 
-                            # Save course snapshot
-                            c_snapshot = LOGS_DIR / f"course_{c.moodle_course_id}_snapshot.html"
-                            c_snapshot.write_text(page.content(), encoding="utf-8", errors="replace")
+                            # Find all activity links (/mod/)
+                            mod_links = page.query_selector_all('a[href*="/mod/"]')
+                            course_activities: Dict[str, Dict[str, Any]] = {}
 
-                            # Look for activity links
-                            activity_links = page.query_selector_all('a[href*="/mod/"]')
-                            for alink in activity_links:
+                            for alink in mod_links:
                                 ahref = alink.get_attribute("href") or ""
                                 atitle = (alink.inner_text() or "").strip()
-                                if not ahref or not atitle or len(atitle) < 2:
+                                if not ahref or "id=" not in ahref:
                                     continue
 
-                                # Determine activity type from URL
+                                # Clean title
+                                atitle_clean = atitle.split("\n")[0].strip()
+                                item_id = ahref.split("id=")[1].split("&")[0]
+
+                                # Classify activity type
                                 act_type = "other"
                                 if "/mod/assign/" in ahref:
                                     act_type = "assignment"
@@ -213,28 +291,80 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
                                     act_type = "forum"
                                 elif "/mod/attendance/" in ahref:
                                     act_type = "attendance"
+                                elif "/mod/url/" in ahref:
+                                    act_type = "resource"
 
-                                # Extract unique item ID
-                                item_id = ahref
-                                if "id=" in ahref:
-                                    item_id = ahref.split("id=")[1].split("&")[0]
+                                if item_id not in course_activities and atitle_clean:
+                                    course_activities[item_id] = {
+                                        "id": item_id,
+                                        "title": atitle_clean,
+                                        "type": act_type,
+                                        "url": ahref,
+                                    }
 
+                            # Deep inspect assignments for due date & submission status
+                            for item_id, ainfo in course_activities.items():
+                                activities_found_count += 1
+                                due_date = None
+                                has_deadline = False
+                                submission_status = None
+                                act_status = "new"
+
+                                if ainfo["type"] == "assignment":
+                                    try:
+                                        page.goto(ainfo["url"], timeout=25000, wait_until="domcontentloaded")
+                                        page.wait_for_timeout(1000)
+
+                                        # Parse submission status table
+                                        rows = page.query_selector_all('.submissionstatustable tr, .generaltable tr')
+                                        for row in rows:
+                                            th = row.query_selector('th, td:first-child')
+                                            td = row.query_selector('td:last-child')
+                                            if not th or not td:
+                                                continue
+                                            header = th.inner_text().strip().lower()
+                                            val = td.inner_text().strip()
+
+                                            if "due" in header:
+                                                parsed_dt = parse_moodle_datetime(val)
+                                                if parsed_dt:
+                                                    due_date = parsed_dt
+                                                    has_deadline = True
+                                            elif "submission status" in header:
+                                                submission_status = val
+                                                if "submitted" in val.lower():
+                                                    act_status = "submitted"
+
+                                        # Fallback to instructions snippet if due date not in table
+                                        if not has_deadline:
+                                            intro_elem = page.query_selector('[data-region="activity-information"], #intro, .activity-description')
+                                            if intro_elem:
+                                                intro_text = intro_elem.inner_text()
+                                                parsed_dt = parse_moodle_datetime(intro_text)
+                                                if parsed_dt:
+                                                    due_date = parsed_dt
+                                                    has_deadline = True
+                                    except Exception as aerr:
+                                        logger.debug(f"Could not inspect assignment {ainfo['title']}: {aerr}")
+
+                                # Upsert activity into database
                                 existing_act = session.exec(
                                     select(MoodleActivity).where(MoodleActivity.moodle_item_id == item_id)
                                 ).first()
-
-                                activities_found_count += 1
 
                                 if not existing_act:
                                     new_act = MoodleActivity(
                                         course_id=c.id,
                                         moodle_item_id=item_id,
-                                        title=atitle,
-                                        activity_type=act_type,
-                                        moodle_url=ahref,
-                                        has_deadline=False,
-                                        due_date=None,
-                                        status="new"
+                                        title=ainfo["title"],
+                                        activity_type=ainfo["type"],
+                                        moodle_url=ainfo["url"],
+                                        has_deadline=has_deadline,
+                                        due_date=due_date,
+                                        status=act_status,
+                                        submission_status_moodle=submission_status,
+                                        created_at=datetime.now(timezone.utc),
+                                        updated_at=datetime.now(timezone.utc)
                                     )
                                     session.add(new_act)
                                     session.commit()
@@ -242,10 +372,27 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
                                     _log_activity(
                                         session,
                                         event_type="activity_discovered",
-                                        message=f"Discovered {act_type}: {atitle} ({c.full_name})",
+                                        message=f"Discovered {ainfo['type']}: {ainfo['title']} ({c.short_name or c.full_name})",
                                         severity="info",
-                                        details={"activity_type": act_type, "course": c.full_name}
+                                        details={
+                                            "type": ainfo["type"],
+                                            "title": ainfo["title"],
+                                            "has_deadline": has_deadline,
+                                            "due_date": due_date.isoformat() if due_date else None
+                                        }
                                     )
+                                else:
+                                    # Update dynamic fields
+                                    existing_act.has_deadline = has_deadline
+                                    existing_act.due_date = due_date
+                                    if submission_status:
+                                        existing_act.submission_status_moodle = submission_status
+                                    if act_status == "submitted" and existing_act.status != "submitted":
+                                        existing_act.status = "submitted"
+                                    existing_act.updated_at = datetime.now(timezone.utc)
+                                    session.add(existing_act)
+                                    session.commit()
+
                         except Exception as ce:
                             logger.warning(f"Error scanning course {c.full_name}: {ce}")
                             continue
@@ -253,7 +400,7 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
                 finally:
                     browser.close()
 
-            # Mark sync run as completed successfully
+            # Finalize SyncRun
             sync_run.completed_at = datetime.now(timezone.utc)
             sync_run.status = "completed"
             sync_run.courses_found = courses_found_count
@@ -266,10 +413,11 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
             _log_activity(
                 session,
                 event_type="moodle_check_completed",
-                message=f"Moodle sync completed: {courses_found_count} courses, {activities_found_count} activities ({new_items_count} new)",
+                message=f"Sync completed: {courses_found_count} courses ({len(active_courses)} active), {activities_found_count} activities ({new_items_count} new)",
                 severity="success",
                 details={
                     "courses_found": courses_found_count,
+                    "active_courses": len(active_courses),
                     "activities_found": activities_found_count,
                     "new_items_found": new_items_count
                 }
