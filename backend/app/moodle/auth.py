@@ -102,13 +102,32 @@ def launch_interactive_login(moodle_url: str, timeout_seconds: int = 300) -> Dic
     logger.info(f"Starting Microsoft SSO interactive login for: {moodle_url}")
 
     with sync_playwright() as p:
-        # Launch persistent browser context to retain Microsoft device trust & cached sessions
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=str(BROWSER_PROFILE_DIR),
-            headless=False,
-            no_viewport=True,
-            args=["--start-maximized"],
-        )
+        # Launch persistent browser context using Microsoft Edge with Windows SSO flags
+        edge_args = [
+            "--enable-features=msSingleSignOnOSForPrimaryAccountIsShared,msImplicitSignIn",
+            "--auth-server-allowlist=*.microsoftonline.com,*.live.com,*.office.com",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--start-maximized",
+        ]
+
+        try:
+            logger.info("Launching real Microsoft Edge (channel='msedge')...")
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=str(BROWSER_PROFILE_DIR),
+                channel="msedge",
+                headless=False,
+                no_viewport=True,
+                args=edge_args,
+            )
+        except Exception as edge_err:
+            logger.warning(f"Could not launch Edge ({edge_err}), falling back to Chromium...")
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=str(BROWSER_PROFILE_DIR),
+                headless=False,
+                no_viewport=True,
+                args=["--start-maximized"],
+            )
 
         try:
             page = context.pages[0] if context.pages else context.new_page()
@@ -279,7 +298,10 @@ def verify_session(moodle_url: str) -> Dict[str, Any]:
         }
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        try:
+            browser = p.chromium.launch(channel="msedge", headless=True)
+        except Exception:
+            browser = p.chromium.launch(headless=True)
         try:
             context = browser.new_context(storage_state=str(STORAGE_STATE_FILE))
             page = context.new_page()

@@ -95,7 +95,10 @@ def run_moodle_sync(trigger: str = "manual") -> SyncRun:
             new_items_count = 0
 
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                try:
+                    browser = p.chromium.launch(channel="msedge", headless=True)
+                except Exception:
+                    browser = p.chromium.launch(headless=True)
                 try:
                     context = browser.new_context(storage_state=str(STORAGE_STATE_FILE))
                     page = context.new_page()

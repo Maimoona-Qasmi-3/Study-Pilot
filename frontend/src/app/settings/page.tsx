@@ -182,8 +182,8 @@ export default function SettingsPage() {
           <div className="flex items-center space-x-3">
             <Key className="w-5 h-5 text-indigo-400" />
             <div>
-              <h2 className="text-base font-semibold text-white">Microsoft Single Sign-On (SSO)</h2>
-              <p className="text-xs text-slate-400">Real browser session capture for university Microsoft authentication & MFA</p>
+              <h2 className="text-base font-semibold text-white">Microsoft Single Sign-On (via Microsoft Edge)</h2>
+              <p className="text-xs text-slate-400">Real Microsoft Edge browser session with Windows SSO integration for university authentication & MFA</p>
             </div>
           </div>
 
@@ -210,13 +210,13 @@ export default function SettingsPage() {
 
         <div className="space-y-4 text-sm text-slate-300">
           <div className="bg-slate-950/60 p-4 rounded-lg border border-slate-800/80 space-y-2 text-xs text-slate-400 leading-relaxed">
-            <p className="font-semibold text-slate-200">How Microsoft SSO works with Study Pilot:</p>
+            <p className="font-semibold text-slate-200">How Microsoft Edge SSO works with Study Pilot:</p>
             <ol className="list-decimal list-inside space-y-1 text-slate-300">
-              <li>Click <strong>&quot;Sign in with Microsoft SSO&quot;</strong> to open a real browser window.</li>
-              <li>The browser navigates to Moodle and clicks <strong>&quot;Sign in with Microsoft&quot;</strong>.</li>
-              <li>Microsoft will automatically authenticate you if a session is cached, or display the Microsoft login and MFA prompt.</li>
-              <li>Complete your Microsoft login and MFA manually in the browser.</li>
-              <li>Once Microsoft redirects back to Moodle, Study Pilot detects successful authentication and saves the session locally to <code className="text-blue-400">data/moodle_auth/storage_state.json</code>.</li>
+              <li>Click <strong>&quot;Sign in with Microsoft Edge&quot;</strong> to launch real Microsoft Edge.</li>
+              <li>Edge uses Windows SSO to recognize your university Microsoft/Entra ID account.</li>
+              <li>The browser navigates to Moodle and triggers <strong>&quot;Sign in with Microsoft&quot;</strong>.</li>
+              <li>If you have an active session, Edge can sign you in automatically; otherwise, complete your login/MFA in Edge.</li>
+              <li>Once redirected back to Moodle, Study Pilot detects successful authentication and saves the session locally to <code className="text-blue-400">data/moodle_auth/storage_state.json</code>.</li>
             </ol>
             <p className="text-slate-500 text-[11px] pt-1">
               Zero-credential leak: Study Pilot never handles, logs, or stores your password or MFA codes.
@@ -235,7 +235,7 @@ export default function SettingsPage() {
               }`}
             >
               <Laptop className="w-4 h-4" />
-              <span>{isLoggingIn ? "Browser Window Open..." : "Sign in with Microsoft SSO"}</span>
+              <span>{isLoggingIn ? "Microsoft Edge Open..." : "Sign in with Microsoft Edge"}</span>
             </button>
 
             <button
