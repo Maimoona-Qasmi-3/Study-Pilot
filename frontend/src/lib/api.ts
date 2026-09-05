@@ -1,4 +1,4 @@
-import { DashboardStats, Course, MoodleActivity, SyncRun, SyncStatus, AgentLog } from "@/types";
+import { DashboardStats, Course, MoodleActivity, SyncRun, SyncStatus, AgentLog, WorkspaceInfo, WorkflowProfile } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
@@ -136,4 +136,57 @@ export async function fetchLoginProgress(): Promise<{
   const res = await fetch(`${API_BASE}/moodle/auth/progress`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to load login progress");
   return res.json();
+}
+
+export async function fetchWorkflowProfiles(): Promise<WorkflowProfile[]> {
+  const res = await fetch(`${API_BASE}/workspaces/profiles`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to load workflow profiles");
+  return res.json();
+}
+
+export async function fetchWorkspaceInfo(activityId: string): Promise<WorkspaceInfo> {
+  const res = await fetch(`${API_BASE}/workspaces/${activityId}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to load workspace info");
+  return res.json();
+}
+
+export async function initWorkspace(activityId: string, workflowProfileId?: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/workspaces/${activityId}/init`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workflow_profile_id: workflowProfileId || null }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: "Failed to initialize workspace" }));
+    throw new Error(errorData.detail || "Failed to initialize workspace");
+  }
+  return res.json();
+}
+
+export async function launchWorkspaceTool(activityId: string, tool: "vscode" | "explorer" | "terminal"): Promise<any> {
+  const res = await fetch(`${API_BASE}/workspaces/${activityId}/launch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tool }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: `Failed to launch ${tool}` }));
+    throw new Error(errorData.detail || `Failed to launch ${tool}`);
+  }
+  return res.json();
+}
+
+export async function generateWorkspaceReport(activityId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/workspaces/${activityId}/generate-report`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: "Failed to generate report" }));
+    throw new Error(errorData.detail || "Failed to generate report");
+  }
+  return res.json();
+}
+
+export function getReportDownloadUrl(activityId: string): string {
+  return `${API_BASE}/workspaces/${activityId}/download-report`;
 }

@@ -47,14 +47,14 @@ I built Study Pilot to:
 - **Audited Sync Runs**: Persists every synchronization attempt in SQLite (`SyncRun` and `AgentActivityLog`), tracking items discovered, execution duration, and errors.
 - **Executive Web Dashboard**: Responsive dark UI featuring statistics cards, active vs archived course cards, activity filters, and a dedicated deadline calendar.
 
-### In Progress (🚧 Phase 2)
-- **Academic Workflow Engine**: Course-specific workflow bindings (e.g., `CSC-103 Object Oriented Programming` -> C++ workspace; `ELE-205 Digital Logic Design` -> Circuit simulation workspace; `ENG-102 Expository Writing` -> Document workspace).
-- **Workspace Generator**: Automated scaffolding of structured project folders (`data/workspaces/{course_code}/{activity_slug}/`) containing `src/`, `evidence/`, `output/`, and `workspace.json`.
-- **Native OS Launchers**: Direct one-click "Open in VS Code" (`code <path>`) and "Open in Explorer" (`explorer.exe <path>`) from the browser.
-- **University Report Generator (`python-docx`)**: Local generation of standardized university lab reports with cover pages, question prompts, monospaced code blocks, and embedded execution screenshots.
+- **Academic Workflow Engine**: Modular course-specific and activity-specific workflow bindings (e.g., `CSC-103 Object Oriented Programming` -> C++ workspace; `CSC-210` -> Python scripting; `ELE-205` -> Digital logic; `ENG-102` -> Academic writing).
+- **Workspace Generator**: Automated, idempotent scaffolding of structured project folders (`data/workspaces/{course_code}/{activity_slug}/`) containing `src/`, `evidence/`, `output/`, `instructions.md`, and `workspace.json` (preserves all user files).
+- **Native OS Launchers**: Direct one-click "Open in VS Code" (`code <path>`), "Open in Explorer" (`explorer.exe <path>`), and Terminal (`wt.exe` / `powershell.exe`) from the browser.
+- **Deterministic University Report Generator (`python-docx`)**: Local, offline generation of standardized university lab reports with institutional cover pages, raw Moodle objectives, monospaced code blocks, and embedded execution screenshots.
+- **SSO Expiration Guard**: Automated authentication expiry detection safeguarding background scheduled checks.
 
 ### Planned (⬜ Future Roadmap)
-- **Phase 3 — Local AI Verification**: Integration with a local LLM (e.g. Ollama) for zero-cost code review, rubric analysis, and verification of lab task requirements before submission.
+- **Phase 3 — Local AI Verification**: Local zero-cost LLM integration (via Ollama) for code analysis, rubric deconstruction (`tasks.json`), and test scenarios without paid APIs ([Phase 3 Spec](docs/phase3-architecture.md)).
 - **Phase 4 — Review & Staging Pipeline**: Human-in-the-loop review dashboard to inspect generated deliverables before automated Moodle upload.
 
 ---

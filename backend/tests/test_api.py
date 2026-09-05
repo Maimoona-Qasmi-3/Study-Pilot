@@ -116,3 +116,77 @@ def test_auth_progress_endpoint():
     assert "is_logging_in" in prog
     assert "status" in prog
     assert "message" in prog
+
+def test_workspaces_api_endpoints(session: Session):
+    import shutil
+    from pathlib import Path
+    from app.api.workspaces import (
+        list_workflow_profiles,
+        get_workspace_info,
+        initialize_workspace,
+        WorkspaceInitRequest,
+        generate_report,
+        download_report,
+    )
+
+    # 1. Test profiles list
+    profiles = list_workflow_profiles()
+    assert len(profiles) >= 6
+
+    # 2. Setup course & activity
+    course = Course(
+        moodle_course_id="api_course_1",
+        full_name="Discrete Structures",
+        short_name="CSC-210",
+        moodle_url="https://lms.shu.edu.pk/course/view.php?id=210",
+        is_active=True
+    )
+    session.add(course)
+    session.commit()
+    session.refresh(course)
+
+    act = MoodleActivity(
+        course_id=course.id,
+        moodle_item_id="api_item_555",
+        title="Propositional Logic Lab",
+        description_text="Implement truth table generator.",
+        activity_type="assignment",
+        moodle_url="https://lms.shu.edu.pk/mod/assign/view.php?id=555",
+        has_deadline=True,
+    )
+    session.add(act)
+    session.commit()
+    session.refresh(act)
+
+    # 3. Test uninitialized info
+    info = get_workspace_info(activity_id=act.id, session=session)
+    assert info["initialized"] is False
+
+    # 4. Test initialize
+    init_res = initialize_workspace(
+        activity_id=act.id,
+        req=WorkspaceInitRequest(workflow_profile_id="python_scripting"),
+        session=session
+    )
+    assert init_res["success"] is True
+    workspace_dir = Path(init_res["absolute_path"])
+
+    try:
+        # Check info again
+        info2 = get_workspace_info(activity_id=act.id, session=session)
+        assert info2["initialized"] is True
+        assert "main.py" in info2["src_files"]
+
+        # 5. Test generate report
+        report_res = generate_report(activity_id=act.id, session=session)
+        assert report_res["success"] is True
+        assert report_res["filename"].endswith(".docx")
+
+        # 6. Test download report endpoint
+        resp = download_report(activity_id=act.id, session=session)
+        assert resp.media_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        assert resp.filename == report_res["filename"]
+
+    finally:
+        if workspace_dir.exists():
+            shutil.rmtree(workspace_dir)

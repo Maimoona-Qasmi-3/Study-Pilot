@@ -54,16 +54,16 @@ This log tracks the chronological development milestones, verified capabilities,
 
 ---
 
-## Phase 2: Academic Workflow Engine & Document Generation (In Progress)
+## Phase 2: Academic Workflow Engine & Document Generation (Completed)
 
 - [x] Architectural plan drafted and verified (`implementation_plan.md`).
-- [ ] Implement `data/workspaces/{course_code}/{activity_slug}/` workspace directory generator.
-- [ ] Add native Windows integration: "Open in VS Code" (`code <path>`) and "Open in File Explorer" (`explorer.exe <path>`).
-- [ ] Build university lab manual and assignment report generator using `python-docx` (Cover page, code listings, evidence screenshots).
-- [ ] Course-specific workflow bindings:
-  - `CSC-103 (Object Oriented Programming)` -> Coding/C++ workspace
-  - `ELE-205 (Digital Logic Design)` -> Circuit simulation workspace
-  - `ENG-102 (Expository Writing)` -> Academic report workspace
+- [x] Implemented `data/workspaces/{course_code}/{activity_slug}/` workspace directory generator with idempotent initialization.
+- [x] Implemented modular workflow profiles & templates (`cpp_coding`, `python_scripting`, `digital_logic`, `academic_writing`, `linear_algebra`, `generic_lab`).
+- [x] Added isolated native Windows integration: "Open in VS Code" (`code <path>`), "Open in File Explorer" (`explorer.exe <path>`), and Terminal (`wt.exe` / `powershell.exe`).
+- [x] Built deterministic university lab manual and assignment report generator using `python-docx` (Cover page, raw Moodle instructions, monospaced code listings, evidence screenshots).
+- [x] Built complete REST API suite (`/api/workspaces/*`) for initialization, inspection, OS launching, report generation, and direct DOCX downloads.
+- [x] Integrated full frontend workspace controls into the Next.js Activities page with modal configuration and status feedback.
+- [x] Added Microsoft SSO session-expiration guard for autonomous background scheduling.
 
 ---
 

@@ -53,9 +53,34 @@ export interface MoodleActivity {
   status: ActivityStatus;
   priority: Priority;
   workflow_id: string | null;
+  workspace_path?: string | null;
+  workspace_status?: "uninitialized" | "ready" | "in_progress" | "completed";
   submission_status_moodle: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface WorkflowProfile {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+}
+
+export interface WorkspaceInfo {
+  initialized: boolean;
+  activity_id: string;
+  workspace_status: "uninitialized" | "ready" | "in_progress" | "completed";
+  workspace_path: string | null;
+  absolute_path?: string;
+  workflow_profile_id?: string;
+  workflow_profile_name?: string;
+  src_files: string[];
+  evidence_files: string[];
+  output_files: string[];
+  has_report: boolean;
+  report_filename?: string | null;
+  metadata?: Record<string, any>;
 }
 
 export interface SyncRun {

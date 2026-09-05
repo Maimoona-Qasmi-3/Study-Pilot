@@ -5,6 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.3.0] - 2026-09-05
+
+### Added
+- **Academic Workspace Engine**: Idempotent directory generator creating `data/workspaces/{course}/{activity}/` with `src/`, `evidence/`, `output/`, and `workspace.json`.
+- **Workflow Profile System**: Modular workflow profiles for `cpp_coding`, `python_scripting`, `digital_logic`, `academic_writing`, `linear_algebra`, and `generic_lab` with course heuristic bindings.
+- **Isolated Native Windows Launchers**: Secure, validated process launchers for VS Code (`code <path>`), Windows File Explorer, and Windows Terminal (`wt.exe` / PowerShell).
+- **Deterministic DOCX Report Generator**: University report compiler using `python-docx` that embeds raw Moodle instructions, monospaced code listings, and evidence screenshots without external AI dependencies.
+- **Workspace REST APIs**: Full backend suite under `/api/workspaces/*` for initialization, inspection, OS launching, report compilation, and downloads.
+- **Frontend Workspace Integration**: Full workspace controls on the Next.js Activities page with initialization modal, workflow picker, and one-click tool launchers.
+- **SSO Expiration Guard**: Added graceful authentication expiration detection for Windows Task Scheduler background runs.
+- **Phase 3 Specification**: Comprehensive architecture document for zero-cost local AI assistance via Ollama (`docs/phase3-architecture.md`).
+
+---
+
 ## [0.2.0] - 2026-09-04
 
 ### Added

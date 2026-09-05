@@ -36,8 +36,20 @@ def main():
                 )
                 sys.exit(0)
             else:
-                logger.error(f"Sync ended with status: {sync_run.status}. Error: {sync_run.error_message}")
-                sys.exit(1)
+                is_auth_error = any(
+                    k in (sync_run.error_message or "").lower()
+                    for k in ["expired", "not found", "permission", "login"]
+                )
+                if is_auth_error:
+                    logger.warning(
+                        f"Authentication required: {sync_run.error_message}. "
+                        "Background check paused safely. Please sign in via Study Pilot Settings."
+                    )
+                    # Exit cleanly for scheduled OS task so it doesn't trigger OS error alerts
+                    sys.exit(0 if args.trigger == "scheduled" else 1)
+                else:
+                    logger.error(f"Sync ended with status: {sync_run.status}. Error: {sync_run.error_message}")
+                    sys.exit(1)
         except Exception as e:
             logger.error(f"Failed to execute sync: {e}", exc_info=True)
             sys.exit(1)

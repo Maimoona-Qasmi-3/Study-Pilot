@@ -31,6 +31,8 @@ class MoodleActivity(SQLModel, table=True):
     )
     priority: str = Field(default="medium", description="Priority: low, medium, high, urgent")
     workflow_id: Optional[str] = Field(default=None, description="Workflow ID assigned to this activity")
+    workspace_path: Optional[str] = Field(default=None, description="Relative path to local workspace")
+    workspace_status: str = Field(default="uninitialized", index=True, description="Workspace status: uninitialized, ready, in_progress, completed")
     submission_status_moodle: Optional[str] = Field(default=None, description="Moodle submission state e.g. Submitted for grading, No attempt")
     created_at: datetime = Field(default_factory=get_utc_now)
     updated_at: datetime = Field(default_factory=get_utc_now)
